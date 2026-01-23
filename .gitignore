@@ -2,6 +2,9 @@
 .Rhistory
 .Rapp.history
 
+# gitignore
+.gitignore
+
 # Session Data files
 .RData
 .RDataTmp
@@ -47,3 +50,17 @@ po/*~
 
 # RStudio Connect folder
 rsconnect/
+
+# out files
+
+wolfe_case_study/out/*
+otter_case_study/out/*
+
+# data files
+
+wolfe_case_study/data/*
+otter_case_study/data/*
+
+# sbatch files
+
+*.sh
