@@ -7,12 +7,12 @@ library(terra)
 rm(list = ls())
 
 source("functions/utilities.R")
-source("functions/nimbleModel_wolfeCaseStudy.R")
+source("functions/nimbleModel_wolfCaseStudy.R")
 
-filenames <- list(y = "wolfe_case_study/data/wolf_louvrier.rds", 
-                  effort = "wolfe_case_study/data/effort_louvrier.rds",
-                  envCovs = "wolfe_case_study/data/envcov_louvrier.rds",
-                  coords = "wolfe_case_study/data/coordcells_wolf.rds")
+filenames <- list(y = "wolf_case_study/data/wolf_louvrier.rds", 
+                  effort = "wolf_case_study/data/effort_louvrier.rds",
+                  envCovs = "wolf_case_study/data/envcov_louvrier.rds",
+                  coords = "wolf_case_study/data/coordcells_wolf.rds")
 
 
 ### 1. Get data and covariates -------------------------------------------------
@@ -82,7 +82,7 @@ Cmod.MCMC <- compileNimble(mod.MCMC, project = mod)
 
 chain <- floor(runif(1, 100000, 999999)) #get Unique identifier for the MCMC chain
 cat(chain, "\n")
-dir.create(paste0("wolfe_case_study/out/CHAIN_", chain))
+dir.create(paste0("wolf_case_study/out/CHAIN_", chain))
 
 Cmod.MCMC$run(niter = 5000, nburnin = 5000, reset = TRUE)
 
@@ -96,7 +96,7 @@ for(c in 1:nChunks){
   Cmod.MCMC$run(niter = nIter, nburnin = 0, reset = FALSE, resetMV = TRUE)
   samples <- as.matrix(Cmod.MCMC$mvSamples)
   saveRDS(samples,
-          file = paste0("wolfe_case_study/out/CHAIN_", chain, "/MCMCsamples_wolfe_model_chunk", c, ".rds"))
+          file = paste0("wolf_case_study/out/CHAIN_", chain, "/MCMCsamples_wolf_model_chunk", c, ".rds"))
   rm(samples)
   gc()
 }

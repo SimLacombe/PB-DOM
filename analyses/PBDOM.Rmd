@@ -20,7 +20,7 @@ rm(list = ls())
 source("functions/utilities.R")
 source("functions/load_chain.R")
 
-chains <- list(wolfe = c(236508, 344297))
+chains <- list(wolf = c(236508, 344297))
 
 ```
 ## Simulation study
@@ -82,15 +82,15 @@ ggplot(simulation_summary) +
 
 ## Case studies
 
-```{r get wolfe data}
+```{r get wolf data}
 
 covs <- list(col = c("p_forest", "p_agri", "p_alti", "p_halt"),
              det = c("effort", "p_road"))
 
-france  <- filter(read_sf("wolfe_case_study/data/countries_shp/"), NAME == "France")
-X       <- readRDS("wolfe_case_study/data/envcov_louvrier.rds")
-effort  <- readRDS("wolfe_case_study/data/effort_louvrier.rds")
-xy      <- select(readRDS("wolfe_case_study/data/coordcells_wolf.rds"), X, Y)
+france  <- filter(read_sf("wolf_case_study/data/countries_shp/"), NAME == "France")
+X       <- readRDS("wolf_case_study/data/envcov_louvrier.rds")
+effort  <- readRDS("wolf_case_study/data/effort_louvrier.rds")
+xy      <- select(readRDS("wolf_case_study/data/coordcells_wolf.rds"), X, Y)
 
 N <- nrow(xy)
 T <- 23
@@ -100,7 +100,7 @@ K <- 4
 
 ```{r load and inspect chains}
 
-fit <- map(paste0("wolfe_case_study/out/CHAIN_", chains$wolfe, "/"), load_chain, T = T, N = N)
+fit <- map(paste0("wolf_case_study/out/CHAIN_", chains$wolf, "/"), load_chain, T = T, N = N)
 
 MCMCvis::MCMCtrace(
   object = map(fit, ~.x$pars[, c(1,2,4:13)]),
