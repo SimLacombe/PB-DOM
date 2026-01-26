@@ -2,9 +2,6 @@
 .Rhistory
 .Rapp.history
 
-# gitignore
-.gitignore
-
 # Session Data files
 .RData
 .RDataTmp
@@ -55,7 +52,11 @@ rsconnect/
 
 wolfe_case_study/out/*
 otter_case_study/out/*
-
+simulation_study/out/*
+!simulation_study/out/sim_3166341
+!wolfe_case_study/out/CHAIN_236508
+wolfe_case_study/out/CHAIN_236508/*
+!wolfe_case_study/out/CHAIN_236508/MCMCsamples_wolfe_model_chunk1.rds
 # data files
 
 wolfe_case_study/data/*
