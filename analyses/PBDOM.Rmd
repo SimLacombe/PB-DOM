@@ -1,0 +1,210 @@
+---
+title: "PB-DOM"
+author: "SimLac"
+date: "2026-01-23"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r set up}
+
+library(tidyverse)
+library(purrr)
+library(sf)
+
+rm(list = ls())
+
+source("functions/utilities.R")
+source("functions/load_chain.R")
+
+chains <- list(wolfe = c(236508, 344297))
+
+```
+## Simulation study
+
+```{r get simulation parameters}
+
+params <- data.frame(scenario = paste0("Scenario", 1:4),
+                     alpha_psi = NA,
+                     alpha_omega = logit(0.33), alpha_rho = logit(0.66), alpha = 7.5,
+                     sigma = c(12.5,25,12.5,25),
+                     alpha_gam = logit(0.5),
+                     beta_gam = c(0,0,5,5))
+
+sim_paths <- list.files("simulation_study/out", full.names = TRUE)[1:5] %>%
+  map(list.dirs, full.names = TRUE, recursive = FALSE) %>%
+  reduce(c)
+
+simulation_summary <- strsplit(sim_paths, "/") %>%
+  map(~.x[c(3,4)]) %>% 
+  reduce(rbind) %>%
+  data.frame 
+
+colnames(simulation_summary) <- c("sim", "scenario")
+simulation_summary <- simulation_summary %>%
+  group_by(sim, scenario) %>%
+  summarize(thr = paste0(2:4, ".sigma")) %>%
+  left_join(params, by = "scenario") %>%
+  pivot_longer(cols = sort(colnames(params)[-1]), names_to = "param", values_to = "true")
+  
+
+```
+
+```{r load chains}
+
+simulation_summary <- list.files(sim_paths, full.names = TRUE, pattern = "MCMC") %>% 
+  map(readRDS) %>%
+  map(reduce, rbind) %>% 
+  map(apply, 2, my_quantile) %>%
+  map(t) %>%
+  reduce(rbind) %>%
+  cbind(simulation_summary, .)
+
+```
+
+```{r plot 95 CI}
+
+ggplot(simulation_summary) +
+  geom_pointrange(aes(x=med, xmin = inf, xmax = sup, y = thr, group = sim),
+                  position = position_dodge(width = 1)) +
+  geom_vline(aes(xintercept = true), linetype = "dashed", color = "red") +
+  facet_grid(scenario ~ param, scales = "free") +
+  xlab("") + ylab("") +
+  theme_bw() +
+  theme(text = element_text(face = "bold"),
+        strip.placement = "outside",
+        strip.background = element_blank())
+```
+
+
+## Case studies
+
+```{r get wolfe data}
+
+covs <- list(col = c("p_forest", "p_agri", "p_alti", "p_halt"),
+             det = c("effort", "p_road"))
+
+france  <- filter(read_sf("wolfe_case_study/data/countries_shp/"), NAME == "France")
+X       <- readRDS("wolfe_case_study/data/envcov_louvrier.rds")
+effort  <- readRDS("wolfe_case_study/data/effort_louvrier.rds")
+xy      <- select(readRDS("wolfe_case_study/data/coordcells_wolf.rds"), X, Y)
+
+N <- nrow(xy)
+T <- 23
+K <- 4
+
+```
+
+```{r load and inspect chains}
+
+fit <- map(paste0("wolfe_case_study/out/CHAIN_", chains$wolfe, "/"), load_chain, T = T, N = N)
+
+MCMCvis::MCMCtrace(
+  object = map(fit, ~.x$pars[, c(1,2,4:13)]),
+  pdf = FALSE,
+  ind = TRUE,
+  Rhat = TRUE
+)
+
+```
+
+```{r dispersion kernel}
+
+sigma <- map(fit, ~ .x$pars[, "sigma"]) %>%
+  reduce(c)
+
+alpha <- map(fit, ~ .x$pars[, "alpha"]) %>%
+  reduce(c)
+
+kerns <- map2(alpha, sigma, delta, x = seq(0,50,1)) %>%
+  reduce(rbind) %>% 
+  apply(2, my_quantile)
+
+kerns <- as.data.frame(t(kerns))
+kerns <- cbind(x = seq(0,50,1), kerns)
+
+ggplot(kerns) + 
+  geom_line(aes(x = x, y=med), col = "blue", linewidth = .5) +
+  geom_ribbon(aes(x =x, ymin = inf, ymax = sup), alpha = 0.33, fill = "lightblue") +
+  xlab("d_ij") + ylab("gamma_ij")+
+  theme_bw()
+
+```
+
+```{r colonization}
+
+alpha_gam <- map(fit, ~ .x$pars[, "alpha_gam"]) %>%
+  reduce(c)
+beta_gam <- map(fit, ~ .x$pars[, grepl("beta_gam\\[", colnames(.x$pars))]) %>%
+  reduce(rbind)
+
+X_col_sim <- matrix(0, nrow = 100 * length(covs$col), ncol = length(covs$col))
+colnames(X_col_sim) <- covs$col
+
+for(i in 1:length(covs$col)){
+  X_col_sim[(1 + 100 * (i-1)):(100*i), i] <- seq(min(X[, i]),max(X[, i]), length.out = 100)
+}  
+
+gamma_sim <- data.frame(X_col_sim)
+gamma_sim[, c("inf", "med", "sup")] <-  t(apply(invlogit(cbind(alpha_gam, beta_gam) %*% t(cbind(1, X_col_sim))), 2, my_quantile))
+gamma_sim <- pivot_longer(gamma_sim, cols = all_of(covs$col), names_to = "cov", values_to = "x") %>%
+  filter(x != 0)
+
+ggplot(gamma_sim) + 
+  geom_line(aes(x = x, y = med), linewidth = .5, col = "blue") + 
+  geom_ribbon(aes(x = x, ymin = inf, ymax = sup), alpha = 0.5, fill = "lightblue") + 
+  facet_wrap(~cov, scales = "free") + 
+  xlab("Scaled covariate value") + ylab("gamma")+
+  theme_bw()
+
+```
+
+```{r detection}
+
+alpha_rho <- map(fit, ~ .x$pars[, "alpha_rho"]) %>%
+  reduce(c)
+beta_rho <- map(fit, ~ .x$pars[, grepl("beta_rho", colnames(.x$pars))]) %>%
+  reduce(rbind)
+
+X_det_sim <- matrix(0, nrow = 100 * length(covs$det), ncol = length(covs$det))
+colnames(X_det_sim) <- covs$det
+
+X_det_sim[1:100, 1] <- seq(min(X[, "p_road"]),max(X[, "p_road"]), length.out = 100)
+X_det_sim[101:200, 2] <- seq(min(effort),max(effort), length.out = 100)
+
+rho_sim <- data.frame(X_det_sim)
+rho_sim[, c("inf", "med", "sup")] <-  t(apply(invlogit(cbind(alpha_rho, beta_rho) %*% t(cbind(1, X_det_sim))), 2, my_quantile))
+rho_sim <- pivot_longer(rho_sim, cols = all_of(covs$det), names_to = "cov", values_to = "x") %>%
+  filter(x != 0)
+
+ggplot(rho_sim) + 
+  geom_line(aes(x = x, y = med), col = "blue", linewidth = .5) + 
+  geom_ribbon(aes(x = x, ymin = inf, ymax = sup), alpha = 0.33, fill = "lightblue") + 
+  facet_wrap(~cov, scales = "free_x") + 
+  xlab("Scaled covariate value") + ylab("rho")+
+  theme_bw()
+
+```
+
+```{r occu maps}
+
+zm.df <- cbind(xy, t(fit[[1]]$zm))
+colnames(zm.df) <- c("X", "Y", paste0("t", 1:23))
+zm.df <- pivot_longer(zm.df, cols = all_of(paste0("t", 1:23)),
+                      names_to = "t", values_to = "psi") %>%
+  mutate(t = as.numeric(gsub("t", "", t)))
+
+plot_t <- c(1, 4, 9, 12, 15, 18, 21, 23)
+ggplot(zm.df %>% filter(t %in% plot_t)) + 
+  geom_tile(aes(x = X, y = Y, fill = psi), show.legend = F) + 
+  geom_sf(data = france, fill = NA) +
+  scale_fill_gradient(low = "lightgrey", high = "orange4") +
+  facet_wrap(~ (t + 1995), nrow = 2) +
+  xlab("") + ylab("") +
+  theme_minimal()
+
+```
+
