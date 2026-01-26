@@ -2,6 +2,9 @@ library(purrr)
 
 rm(list = ls())
 
+args <- commandArgs(trailingOnly = TRUE)
+id_simul <-ifelse(is_empty(args),  floor(runif(1,0,100000)), as.integer(args[1]))
+
 source("functions/utilities.R")
 source("functions/simulate_PBDOM.R")
 load("simulation_study/data/distanceMatrix.Rdata")
@@ -24,7 +27,6 @@ names(simul) <- paste0("Scenario", 1:nrow(params))
 
 ### SAVE -----------------------------------------------------------------------
 
-id_simul <- floor(runif(1,0,100000))
 dir.create(paste0("simulation_study/out/sim_", id_simul))
 walk(names(simul), ~ dir.create(paste0("simulation_study/out/sim_", id_simul, "/", .x)))
 iwalk(simul, ~ saveRDS(.x, file=paste0("simulation_study/out/sim_", id_simul,"/", .y, "/data.rds")))

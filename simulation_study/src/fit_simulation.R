@@ -3,18 +3,18 @@ library(nimble)
 
 rm(list = ls())
 
+args <- commandArgs(trailingOnly = TRUE)
+id_simul <-as.integer(args[1])
+id_scenar <-as.integer(args[2])
+
 source("functions/utilities.R")
 source("functions/nimbleModel_simulations.R")
 load("simulation_study/data/distanceMatrix.Rdata")
 
-path <- list.dirs(list.dirs("simulation_study/out", recursive = FALSE), recursive = FALSE)
-path <- path[!file.exists(paste0(path, "/done.txt"))][1]
-cat(path)
-cat("done", file = paste0(path,"/done.txt"))
-
-dat <- readRDS(paste0(path,"/data.rds"))
+dat <- readRDS(paste0("simulation_study/out/sim_",id_simul, "/Scenario", id_scenar, "/data.rds"))
 
 for(t in 2:4){
+  cat("\n", "RUNNING simulation ", id_simul, " - Scenario ", id_scenar, " - thr ", t, " sigma", "\n")
   dsparse <- getSparse(d, thr = t * dat$sigma)
   
   myConstants <- list(nSites = ncol(dat$y), 
@@ -47,16 +47,8 @@ for(t in 2:4){
     nchains = 2
   )
   
-  saveRDS(mod.out, file = paste0(path, "/MCMC_samples_thr", t, "-sigma.rds"))
-          
-  # png(paste0(path, "/MCMC_traceplot_", t,"sigma.png"), 
-  #     width=21, height=21, units = "cm", res = 300)
-  # MCMCvis::MCMCtrace(
-  #   Rhat = TRUE,
-  #   n.eff = TRUE,
-  #   object = mod.out,
-  #   pdf = FALSE,
-  #   ind = TRUE)
-  # dev.off()
+  saveRDS(mod.out,
+          file = paste0("simulation_study/out/sim_",id_simul, "/Scenario",
+          id_scenar, "/MCMC_samples_thr-", t, "-sigma.rds"))
   
 }

@@ -81,17 +81,22 @@ Cmod.MCMC <- compileNimble(mod.MCMC, project = mod)
 ### Burn in --------------------------------------------------------------------
 
 chain <- floor(runif(1, 100000, 999999)) #get Unique identifier for the MCMC chain
+cat(chain, "\n")
+dir.create(paste0("wolfe_case_study/out/CHAIN_", chain))
+
 Cmod.MCMC$run(niter = 5000, nburnin = 5000, reset = TRUE)
 
 ### Sample ---------------------------------------------------------------------
+
 nChunks <- 10
 nIter <- 500
+
 for(c in 1:nChunks){
   cat("Running chunk", c, "of", nChunks, "\n")
   Cmod.MCMC$run(niter = nIter, nburnin = 0, reset = FALSE, resetMV = TRUE)
   samples <- as.matrix(Cmod.MCMC$mvSamples)
   saveRDS(samples,
-          file = paste0("wolfe_case_study/out/wolfModelFitted_chain", chain, "_chunk", c, ".rds"))
+          file = paste0("wolfe_case_study/out/CHAIN_", chain, "/MCMCsamples_wolfe_model_chunk", c, ".rds"))
   rm(samples)
   gc()
 }

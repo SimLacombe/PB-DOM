@@ -8,7 +8,7 @@ myModel <- nimbleCode({
   alpha_gam  ~ dnorm(0, 1/2.5^2)   # colonization intercept
   alpha_omega~ dnorm(0, 1/2.5^2)   # extinction intercept
   alpha_rho  ~ dnorm(0, 1/2.5^2)   # detection intercept
-  alpha_ginf ~ dnorm(logit(0.01), 1) # long distance colonization probability
+  alpha_ginf ~ dnorm(logit(0.05), 1) # long distance colonization probability
   
   alpha  ~ dlnorm(log(1), 1)
   sigma ~ dlnorm(log(30), 1)
@@ -75,7 +75,7 @@ initial.values <- function(zst, ncovs_col, ncovs_det) {
     alpha_rho = rnorm(1, 0, 1),
     beta_gam = rnorm(ncovs_col, 0, 1),
     beta_rho = rnorm(ncovs_det, 0, 1),
-    alpha_ginf = rnorm(1, logit(1), 1), 
+    alpha_ginf = rnorm(1, logit(0.05), 1), 
     sigma = rlnorm(1, log(30), 1)
   )
 }
