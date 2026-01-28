@@ -96,7 +96,7 @@ for(c in 1:nChunks){
   Cmod.MCMC$run(niter = nIter, nburnin = 0, reset = FALSE, resetMV = TRUE)
   samples <- as.matrix(Cmod.MCMC$mvSamples)
   saveRDS(samples,
-          file = paste0("wolf_case_study/out/CHAIN_", chain, "/MCMCsamples_wolf_model_chunk", c, ".rds"))
+          file = paste0("wolf_case_study/out/CHAIN_", chain, "/MCMC_samples_wolf_model_chunk", c, ".rds"))
   rm(samples)
   gc()
 }

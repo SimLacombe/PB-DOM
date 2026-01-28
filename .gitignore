@@ -56,7 +56,7 @@ simulation_study/out/*
 !simulation_study/out/sim_3166341
 !wolf_case_study/out/CHAIN_236508
 wolf_case_study/out/CHAIN_236508/*
-!wolf_case_study/out/CHAIN_236508/MCMCsamples_wolf_model_chunk1.rds
+!wolf_case_study/out/CHAIN_236508/MCMC_samples_wolf_model_chunk1.rds
 # data files
 
 wolf_case_study/data/*
