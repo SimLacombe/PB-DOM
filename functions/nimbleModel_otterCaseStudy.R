@@ -56,24 +56,24 @@ myModel <- nimbleCode({
   psi <- ilogit(alpha_psi)
 
   for (i in 1:nSites) {
-    gamma[i] <- ilogit(alpha_gam + inprod(beta[1:ncovs_ecol], X[i, 1:ncovs_ecol]))
+    gamma[i] <- ilogit(alpha_gam + inprod(beta[1:ncovs_gamma], X[i, 1:ncovs_gamma]))
     for (t in 1:nSeasons) {
       for (k in 1:nSurveys){
         rho[t, i, k] <- ilogit(alpha_rho[effort[year[t,k], i] + 1] +
-                                 beta_rho_t[effort[year[t,k], i] + 1] * year[t,k])
+                                 beta_rho_t[effort[year[t,k], i] + 1] * (year[t,k] - 12))
       }
     }
   }
 })
 
-initial.values <- function(zst, ncovs_ecol, ncovs_det, b, lambda) {
+initial.values <- function(zst, ncovs_gamma) {
   list(
     z = zst,
     alpha_psi = rnorm(1, 0, 1),
     alpha_gam = rnorm(1, 0, 1),
     alpha_omega = rnorm(1, 0, 1),
     alpha_rho = rnorm(2, 0, 1), 
-    beta = rnorm(ncovs_ecol, 0, 1),
+    beta = rnorm(ncovs_gamma, 0, 1),
     beta_rho_t = rnorm(2, 0, 1),
     sigma = rlnorm(1, log(30), 1),
     alpha = rlnorm(1, log(0.2), 1)

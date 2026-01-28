@@ -26,7 +26,6 @@ donnees_loutres <- st_as_sf(donnees_loutres, wkt = "wkt_geom_4326", crs = 4326) 
   st_transform(crs = 2154)
 
 bg <- read_sf(filenames$bg) %>%
-  arrange(id) %>%
   filter(cellArea >= 3.33e07)
 
 effort <- readRDS(filenames$eff)
@@ -57,7 +56,7 @@ rm(d)
 
 bg <- bg %>% 
   mutate(across(all_of(c("ANG", "CYP", "ECR", "SAL")),
-                ~ log(.x - floor(min(.x)*100)/100))) %>%
+                ~ log(.x + 1))) %>%
   mutate(across(all_of(gamma_covs), ~ c(scale(.x)))) %>%
   arrange(id)
 
@@ -65,20 +64,18 @@ yearMat <- matrix(1:(T*K), T, K, byrow = TRUE)
   
 ### 3. Fit NIMBLE --------------------------------------------------------------
 
+source("functions/nimbleModel_otterCaseStudy.R")
+
 chain <- floor(runif(1, 100000, 999999)) #get Unique identifier for the MCMC chain
 cat(chain, "\n")
-dir.create(paste0("out/CHAIN_", chain))
-params <- list(ecol_covs, det_covs, bg)
-save(params, file=paste0("out/CHAIN_", chain, "/params.RData"))
-
-source("functions/nimbleModel_otterCaseStudy.R")
+dir.create(paste0("otter_case_study/out/CHAIN_", chain))
 
 my.constants <- list(nSites = N, 
                      nSeasons = T,
                      nSurveys = K, 
                      ncovs_gamma = length(gamma_covs),
                      X = as.matrix(st_drop_geometry(bg[,gamma_covs])),
-                     year = yearMat - floor(median(yearMat)),
+                     year = yearMat,
                      effort = effort,
                      dmatP = d_sparse$p,
                      dmatI = d_sparse$i ,
@@ -90,10 +87,7 @@ mod <- nimbleModel(
   data = list(y = y),
   constants = my.constants,
   inits = initial.values(zst = array(1, dim = c(T, N)),
-                         ncovs_ecol = my.constants$ncovs_ecol,
-                         ncovs_det = my.constants$ncovs_det,
-                         b = c(splines$jags.ini[["b"]]),
-                         lambda = splines$jags.ini$lambda),
+                         ncovs_gamma = my.constants$ncovs_gamma),
   calculate = FALSE
 )
 
