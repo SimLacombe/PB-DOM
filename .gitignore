@@ -59,6 +59,9 @@ wolf_case_study/out/CHAIN_236508/*
 !wolf_case_study/out/CHAIN_236508/MCMC_samples_wolf_model_chunk1.rds
 
 otter_case_study/out/*
+!otter_case_study/out/CHAIN_934145
+otter_case_study/out/CHAIN_934145/*
+!otter_case_study/out/CHAIN_934145/MCMC_samples_otter_model_chunk1.rds
 # data files
 
 wolf_case_study/data/*
