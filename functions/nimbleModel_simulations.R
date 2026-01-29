@@ -53,11 +53,11 @@ myModel <- nimbleCode({
 initial.values <- function(zst) {
   list(
     z = zst,
-    alpha_psi = rnorm(1, 0, 1),
-    alpha_gam = rnorm(1, 0, 1),
-    beta_gam = rnorm(1, 0, 1),
-    alpha_omega = rnorm(1, 0, 1),
-    alpha_rho = rnorm(1, 0, 1),
+    alpha_psi = rnorm(1, 0, 1/2.5**2),
+    alpha_gam = rnorm(1, 0, 1/2.5**2),
+    beta_gam = rnorm(1, 0, 1/2.5**2),
+    alpha_omega = rnorm(1, 0, 1/2.5**2),
+    alpha_rho = rnorm(1, 0, 1/2.5**2),
     sigma = rlnorm(1, log(30), 1),
     alpha = rlnorm(1, log(1), 1)
   )
