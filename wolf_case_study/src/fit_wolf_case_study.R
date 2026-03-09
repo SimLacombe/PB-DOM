@@ -14,7 +14,10 @@ filenames <- list(y = "wolf_case_study/data/wolf_louvrier.rds",
                   envCovs = "wolf_case_study/data/envcov_louvrier.rds",
                   coords = "wolf_case_study/data/coordcells_wolf.rds")
 
+RJMCMC <- TRUE
 
+col_covs <- c("p_forest", "p_agri", "p_alti", "p_halt", "p_dbarr", "p_rock")
+  
 ### 1. Get data and covariates -------------------------------------------------
 
 dat <- readRDS(filenames$y)
@@ -53,28 +56,39 @@ sparsemat <- getSparse(dmat, thr = 50)
 myConstants <- list(nSites = Nsites, 
                     nSeasons = Nyears,
                     nSurveys = Nseasons, 
-                    ncovs_col = 4,
+                    ncovs_col = length(col_covs),
                     ncovs_det = 2,
-                    X_col = envCovs[, c("p_forest", "p_agri", "p_alti", "p_halt")],
+                    X_col = envCovs[, col_covs],
                     X_det = X_det,
                     dmatP = sparsemat$p,
                     dmatI = sparsemat$i,
                     d2 = sparsemat$d**2,
                     A = 100,
-                    pi = pi)
+                    pi = pi,
+                    RJMCMC = RJMCMC)
 
 mod <- nimbleModel(
   code = myModel,
   data = list(y = y),
   constants = myConstants,
   inits = initial.values(zst = array(1, dim = c(myConstants$nSeasons, myConstants$nSites)),
-                         ncovs_col = 4, ncovs_det = 2),
+                         ncovs_col = myConstants$ncovs_col, ncovs_det = myConstants$ncovs_det),
   calculate = FALSE
 )
 
 Cmod <- compileNimble(mod)
 mod.Conf <- configureMCMC(mod, enableWAIC = FALSE)
 mod.Conf$addMonitors("z")
+
+if(RJMCMC){
+  mod.Conf$addMonitors("ksi")
+  
+  configureRJ(conf = mod.Conf,
+              targetNodes = "beta_gam",
+              indicatorNodes = "ksi",
+              control = list(mean = 0, scale = 2))
+}
+
 mod.MCMC <- buildMCMC(mod.Conf, useConjugacy = FALSE)
 Cmod.MCMC <- compileNimble(mod.MCMC, project = mod)
 
@@ -88,7 +102,7 @@ Cmod.MCMC$run(niter = 5000, nburnin = 5000, reset = TRUE)
 
 ### Sample ---------------------------------------------------------------------
 
-nChunks <- 10
+nChunks <- 5
 nIter <- 500
 
 for(c in 1:nChunks){

@@ -15,7 +15,15 @@ filenames <- list(loutres = "otter_case_study/data/v_ref_presence_loutre_par_an_
 annees <- 2000:2023
 thr <- 50
 
-gamma_covs <- c("riverLength","ripForest", "CYP", "ANG", "ECR", "SAL")
+RJMCMC <- FALSE
+
+ecol_covs <- c("riverLength", "ripForest", "waterBodyArea",
+               "ibd","slope", "ArableCropland", "HeterogeneousAgriculture")
+
+det_covs <- c("Urban", "coastProx")
+
+to_scale <- c("riverLength","ripForest", "waterBodyArea", "ibd","slope", 
+              "Urban", "ArableCropland","HeterogeneousAgriculture")
 
 ### 1. DONNEES  ----------------------------------------------------------------
 
@@ -26,7 +34,16 @@ donnees_loutres <- st_as_sf(donnees_loutres, wkt = "wkt_geom_4326", crs = 4326) 
   st_transform(crs = 2154)
 
 bg <- read_sf(filenames$bg) %>%
-  filter(cellArea >= 3.33e07)
+  filter(cellArea >= 3.33e07) %>%
+  mutate_if(is.numeric, ~ replace_na(.x, 0))
+
+bg <- bg %>% 
+  mutate(across(all_of(c("ANG", "CYP", "ECR", "SAL", "waterBodyArea", "Urban")),
+                ~ truncate_to_quantile(sqrt(.x), 0.95)),
+         UrbanHighDens = as.numeric(Urban > 20e06),
+         UrbanLowDens = as.numeric(Urban > 5e06 & Urban < 20e06)) %>%
+  mutate(across(all_of(to_scale), ~ c(scale(.x)))) %>%
+  arrange(id)
 
 effort <- readRDS(filenames$eff)
 
@@ -54,12 +71,6 @@ d <- matrix(as.numeric(d)/1000, N, N)
 d_sparse <- getSparse(d, thr = thr)
 rm(d)
 
-bg <- bg %>% 
-  mutate(across(all_of(c("ANG", "CYP", "ECR", "SAL")),
-                ~ log(.x + 1))) %>%
-  mutate(across(all_of(gamma_covs), ~ c(scale(.x)))) %>%
-  arrange(id)
-
 yearMat <- matrix(1:(T*K), T, K, byrow = TRUE)
   
 ### 3. Fit NIMBLE --------------------------------------------------------------
@@ -73,27 +84,40 @@ dir.create(paste0("otter_case_study/out/CHAIN_", chain))
 my.constants <- list(nSites = N, 
                      nSeasons = T,
                      nSurveys = K, 
-                     ncovs_gamma = length(gamma_covs),
-                     X = as.matrix(st_drop_geometry(bg[,gamma_covs])),
+                     ncovs_col = length(ecol_covs),
+                     ncovs_det = length(det_covs),
+                     X = as.matrix(st_drop_geometry(bg[,ecol_covs])),
+                     X_det = as.matrix(st_drop_geometry(bg[,det_covs])),
                      year = yearMat,
                      effort = effort,
                      dmatP = d_sparse$p,
                      dmatI = d_sparse$i ,
                      d2 = d_sparse$d**2,
-                     pi = pi)
+                     pi = pi,
+                     RJMCMC = RJMCMC)
 
 mod <- nimbleModel(
   code = myModel,
   data = list(y = y),
   constants = my.constants,
   inits = initial.values(zst = array(1, dim = c(T, N)),
-                         ncovs_gamma = my.constants$ncovs_gamma),
+                         ncovs_col = my.constants$ncovs_col,
+                         ncovs_det = my.constants$ncovs_det),
   calculate = FALSE
 )
 
 Cmod <- compileNimble(mod)
 mod.Conf <- configureMCMC(mod, enableWAIC = FALSE)
 mod.Conf$addMonitors("z")
+
+if(RJMCMC){
+  mod.Conf$addMonitors("ksi")
+
+  configureRJ(conf = mod.Conf,
+              targetNodes = "beta_gam",
+              indicatorNodes = "ksi",
+              control = list(mean = 0, scale = 2))
+}
 
 mod.MCMC <- buildMCMC(mod.Conf, useConjugacy = FALSE)
 Cmod.MCMC <- compileNimble(mod.MCMC, project = mod)

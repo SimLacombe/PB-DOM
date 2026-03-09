@@ -10,15 +10,22 @@ myModel <- nimbleCode({
   alpha_rho  ~ dnorm(0, 1/2.5^2)   # detection intercept
   alpha_ginf ~ dnorm(logit(0.05), 1) # long distance colonization probability
   
-  alpha  ~ dlnorm(log(1), 1)
-  sigma ~ dlnorm(log(30), 1)
+  # Slopes 
+  p_ksi ~ dbeta(1, 1)
+  for(c in 1:ncovs_col){
+    beta_gam[c] ~ dnorm(0, 1/2.5^2)
+    if(RJMCMC) ksi[c] ~ dbern(p_ksi)
+    if(!RJMCMC) ksi[c] <- 1
+    betaksi[c] <- beta_gam[c] * ksi[c] 
+  }
   
-  for (c in 1:ncovs_col){
-    beta_gam[c]  ~ dnorm(0, 1/2.5^2)   
-  }   
   for (c in 1:ncovs_det){
     beta_rho[c]  ~ dnorm(0, 1/2.5^2)   
   }   
+  
+  # Scale and intensity parameters of the colonisation kernel 
+  sigma ~ dlnorm(log(30), 1)       
+  alpha ~ dlnorm(log(0.5), 1)
   
   ### ECOLOGICAL MODEL ###
   
@@ -45,7 +52,7 @@ myModel <- nimbleCode({
   
   for (i in 1:nSites) {
     for (t in 1:nSeasons) {
-      y[t, i] ~ dbinom(size = nSurveys, prob = z[t, i] * rho[t,i])
+      y[t, i] ~ dbinom(size = nSurveys, prob = z[t, i] * rho[t,i] * (1 - equals(X_det[t,i,1], 0)))
       
     }
   }
@@ -57,7 +64,7 @@ myModel <- nimbleCode({
   gam_inf <- ilogit(alpha_ginf)
   
   for(i in 1:nSites){
-    gamma0[i] <- ilogit(alpha_gam + inprod(beta_gam[1:ncovs_col], X_col[i, 1:ncovs_col]))
+    gamma0[i] <- ilogit(alpha_gam + inprod(betaksi[1:ncovs_col], X_col[i, 1:ncovs_col]))
     for(t in 1:nSeasons){
       rho[t, i] <- ilogit(alpha_rho + inprod(beta_rho[1:ncovs_det], X_det[t, i, 1:ncovs_det]))
     }
