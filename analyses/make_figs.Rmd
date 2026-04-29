@@ -1,0 +1,492 @@
+---
+title: "PB-DOM"
+author: "SimLac"
+date: "2026-01-23"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r set up}
+
+library(tidyverse)
+library(purrr)
+library(sf)
+
+rm(list = ls())
+
+source("functions/utilities.R")
+source("functions/load_chain.R")
+
+```
+## Simulation study
+
+```{r get simulation parameters}
+
+params <- data.frame(scenario = paste0("Scenario", 1:4),
+                     alpha_ksi = (c(0.80,0.80, 0.5,0.5)),
+                     alpha_omega = (0.2),
+                     alpha_psi = (0.043),
+                     alpha_rho = (0.66),
+                     beta_ksi = invlogit(c(0,0,5,5)),
+                     lambda = c(5,5,5,5),
+                     sigma = c(12.5,25,12.5,25))
+
+sim_paths <- list.files("simulation_study/out", full.names = TRUE, pattern = "^sim") %>%
+  map(list.dirs, full.names = TRUE, recursive = FALSE) %>%
+  reduce(c)
+
+simulation_summary <- strsplit(sim_paths, "/") %>%
+  map(~.x[c(3,4)]) %>% 
+  reduce(rbind) %>%
+  data.frame 
+
+colnames(simulation_summary) <- c("sim", "scenario")
+simulation_summary <- simulation_summary %>%
+  group_by(sim, scenario) %>%
+  summarize(thr = paste0(2:4, ".sigma"), .groups = "drop") %>%
+  left_join(params, by = "scenario") %>%
+  pivot_longer(cols = sort(colnames(params)[-1]), names_to = "param", values_to = "true")
+  
+
+```
+
+```{r check convergence}
+allfiles <- list.files(sim_paths, full.names = TRUE, pattern = "MCMC")
+
+.f <- allfiles[sample(1:length(allfiles), 10)]
+.t <- map(.f, strsplit, "/") %>%
+  map(~.x[[1]][c(4,5)]) %>%
+  map(paste, collapse = "-")
+walk2(.f, .t, ~ MCMCvis::MCMCtrace(readRDS(.x), pdf = FALSE, ind = TRUE, Rhat = TRUE, main_den = .y))
+
+```
+
+
+```{r load chains}
+
+simulation_summary <- list.files(sim_paths, full.names = TRUE, pattern = "MCMC") %>% 
+  map(readRDS) %>%
+  map(reduce, rbind) %>%
+  map(~ cbind(apply(.x[, 1:5], 2, invlogit), .x[, 6:7])) %>% #backtransform
+  map(apply, 2, function(x){c(my_quantile(x), mu = mean(x), sig = sd(x))}) %>%
+  map(t) %>%
+  reduce(rbind) %>%
+  cbind(simulation_summary, .)
+
+```
+
+```{r plot 95 CI}
+
+ggplot(simulation_summary) +
+  geom_pointrange(aes(x=med, xmin = inf, xmax = sup, y = thr, group = sim),
+                  position = position_dodge(width = 1)) +
+  geom_vline(aes(xintercept = true), linetype = "dashed", color = "red") +
+  facet_grid(scenario ~ param, scales = "free") +
+  xlab("") + ylab("") +
+  theme_bw() +
+  theme(text = element_text(face = "bold"),
+        strip.placement = "outside",
+        strip.background = element_blank())
+
+true.in.CI95 <- simulation_summary %>%
+  filter(param != "alpha_psi") %>% 
+  mutate(true.in.CI95 = true >= inf & true <= sup) %>% 
+  group_by(scenario, thr, param) %>% 
+  summarize(p = mean(true.in.CI95)) %>% 
+  rowwise %>%
+  mutate(high = min(1, p + 1.96*sqrt(p*(1-p)/50)),
+         low = max(0, p - 1.96*sqrt(p*(1-p)/50))) %>%
+  arrange(thr, param, scenario)
+
+labeller = as_labeller(c(
+  "alpha_ksi" = "\u03b1(\u03be)",
+  "alpha_omega" = "\u03b5",
+  "alpha_rho" = "\u03c1",
+  "beta_ksi" = "\u03b2(\u03be)",
+  "lambda" = "\u03bb",
+  "sigma" = "\u03c3"))
+
+ggplot(true.in.CI95)+
+  geom_col(aes(x = scenario, y = p, fill = thr), position = position_dodge(width = 0.9)) + 
+  geom_errorbar(aes(x = scenario, y = p, ymin = low, ymax = high, group = thr), position = position_dodge(width = 0.9), width = 0.25) + 
+  geom_hline(aes(yintercept = 0.95), color = "red", linetype = "dashed") +
+  facet_wrap(~param, labeller = labeller) +
+  xlab("") + ylab("") +
+  theme_bw() +
+  theme(text = element_text(face = "bold"),
+        strip.placement = "outside",
+        strip.background = element_blank())
+
+ggsave("figures/supplementary/simul_accuracy.png", width = 29.7, height = 14.8, units = "cm")
+```
+
+```{r plot bias and coeff of variation}
+
+win <- data.frame(param = colnames(params)[c(-1, -4)],
+                  inf_bias = c(-.75, -.75, -.75, -.75, -.1, -.1),
+                  sup_bias = c(.75, .75, .75, .75, 3, 3),
+                  inf_CV = 0,
+                  sup_CV = c(50, 50, 50, 50, 250, 250))
+  
+simulation_summary <- simulation_summary %>%
+  filter(param != "alpha_psi") %>% 
+  mutate(relative.bias = (mu - true) / (true),
+         coeff.var = sig/(true) * 100)
+
+labeller = as_labeller(c(
+  "alpha_ksi" = "\u03b1(\u03be)",
+  "alpha_omega" = "\u03b5",
+  "alpha_rho" = "\u03c1",
+  "beta_ksi" = "\u03b2(\u03be)",
+  "lambda" = "\u03bb",
+  "sigma" = "\u03c3"))
+
+plot1 <- ggplot(simulation_summary) +
+  geom_boxplot(aes(x=scenario, y = relative.bias, fill = thr)) +
+  geom_hline(aes(yintercept = 0), linetype = "dashed", color = "red") +
+  geom_pointrange(data = win, aes(ymin = inf_bias, ymax = sup_bias, y = 0, x = "Scenario2"), alpha = 0)+
+  facet_wrap(~ param, nrow = 2, scales = "free", labeller = labeller) +
+  xlab("") + ylab("Relative bias of the mean") +
+  theme_bw() +
+  theme(text = element_text(face = "bold"),
+        strip.placement = "outside",
+        strip.background = element_blank())
+
+plot2 <- ggplot(simulation_summary) +
+  geom_boxplot(aes(x=scenario, y = coeff.var, fill = thr)) +
+  geom_pointrange(data = win, aes(ymin = inf_CV, ymax = sup_CV, y = 0, x = "Scenario2"), alpha = 0)+
+  facet_wrap(~ param, nrow = 2, scales = "free", labeller = labeller) +
+  xlab("") + ylab("Coefficient of variation") +
+  theme_bw() +
+  theme(text = element_text(face = "bold"),
+        strip.placement = "outside",
+        strip.background = element_blank())
+
+ggpubr::ggarrange(plot1, plot2, nrow = 2, common.legend = TRUE, legend = "bottom")
+ggsave("figures/simulsOut.png", width = 29.7, height = 21, units = "cm")
+
+```
+
+## Case studies
+
+```{r get data}
+
+to_scale <- c("riverLength","ripForest", "waterBodyArea", "ibd","slope", 
+              "Urban", "ArableCropland","HeterogeneousAgriculture", "distCity")
+
+effort  <- readRDS("wolf_case_study/data/effort_louvrier.rds")
+wolfCovs <- readRDS("wolf_case_study/data/envcov_louvrier.rds")
+
+france  <- filter(read_sf("wolf_case_study/data/countries_shp/"), NAME == "France")
+xy      <- select(readRDS("wolf_case_study/data/coordcells_wolf.rds"), X, Y)  %>% 
+  st_as_sf(coords = c('X','Y'), crs = 2154) %>%
+  select()
+
+sites_kept <- !sapply(st_intersects(xy, france),
+                      is_empty)
+
+xy <- data.frame(st_coordinates(xy))[sites_kept, ]
+effort <- effort[sites_kept, ]
+wolfCovs <- wolfCovs[sites_kept, ]
+
+bg <- read_sf("otter_case_study/data/background_grid.gpkg") %>%
+  filter(cellArea >= 3.33e07) %>%
+  mutate_if(is.numeric, ~ replace_na(.x, 0)) %>% 
+  mutate(across(all_of(c("ANG", "CYP", "ECR", "SAL", "waterBodyArea", "Urban")),
+                ~ truncate_to_quantile(sqrt(.x), 0.95))) %>%
+  mutate(across(all_of(to_scale), ~ c(scale(.x)))) %>%
+  arrange(id)
+
+```
+
+```{r set up case study analysis}
+
+species_to_plot <- c("wolf", "otter")
+
+chains <- list(wolf = c(184359, 276549),
+               otter = c(135943, 639702))
+
+chains <- map2(c(wolf = "wolf_case_study/out/CHAIN_", otter = "otter_case_study/out/CHAIN_"),
+               chains, paste0, "/")
+
+colonization_covs <- list(wolf =  c("p_forest", "p_agri", "p_alti", "p_dbarr", "p_halt"),
+                          otter = c("riverLength","ripForest", "waterBodyArea", "Urban",
+                                    "ibd","slope", "ArableCropland",
+                                    "HeterogeneousAgriculture"))
+
+detection_covs <- list(wolf = c("effort", "p_road"),
+                       otter.opport = c("year"),
+                       otter.stdzed = c("year"))
+
+X <- list(wolf = wolfCovs,
+          otter = apply(as.matrix(st_drop_geometry(bg[,colonization_covs$otter])), 2, as.numeric)) 
+
+X_det <- list(wolf = as.matrix(data.frame(effort = c(min(effort), max(effort)),
+                                          p_road = c(min(X$wolf[, "p_road"]), max(X$wolf[, "p_road"])))),
+              otter.opport = as.matrix(data.frame(year = c(-11,12))),
+              otter.stdzed = as.matrix(data.frame(year = c(-11,12))))
+
+dims <- list(wolf = c(N = dim(X$wolf)[1], T = 23),
+             otter = c(N = dim(X$otter)[1], T = 6))
+
+chains <- chains[species_to_plot]
+dims <- dims[species_to_plot]
+
+colonization_covs <- colonization_covs[species_to_plot]
+detection_covs <- detection_covs[grepl(paste(species_to_plot, collapse = "|"), names(X_det))]
+X <- X[species_to_plot]
+X_det <- X_det[grepl(paste(species_to_plot, collapse = "|"), names(X_det))]
+
+```
+
+```{r load and inspect chains}
+
+fit <- map2(chains, dims, ~ map(.x, load_chain , N = .y[1], T = .y[2]))
+
+pars <- map(fit, ~ map(.x, "pars"))
+zm <- map(fit, ~ map(.x, "zm"))
+
+rm(fit)
+
+walk(pars, MCMCvis::MCMCtrace, pdf = FALSE, ind = TRUE, Rhat = TRUE)
+
+```
+
+```{r collapse chains}
+
+pars <- map(pars, reduce, rbind)
+zm <- map(zm, reduce, function(.x, .y){(.x + .y)/ 2})
+
+```
+
+
+```{r dispersion kernel}
+
+seq_d <- seq(0,50,1)
+  
+sigma <- map(pars, ~ .x[, "sigma"])
+
+lambda <- map(pars, ~ .x[, "lambda"])
+
+kerns <- map2(lambda, sigma, ~ map2(.x, .y, delta, x = seq_d)) %>%
+  map(reduce, rbind) %>% 
+  map(apply, 2, my_quantile) %>%
+  imap(~ data.frame(species = .y, d = seq_d, t(.x))) %>%
+  reduce(rbind)
+
+ggplot(kerns) + 
+  geom_line(aes(x = d, y = med, col = species), linewidth = .75) +
+  geom_ribbon(aes(x = d, ymin = inf, ymax = sup, fill = species), alpha = 0.33) +
+  scale_fill_manual(values = c("#A37903FF", "#527E87FF")) +
+  scale_color_manual(values = c("#A37903FF", "#527E87FF")) +
+  facet_wrap( ~ "distance (km)", strip.position = "bottom") +
+  xlab("") + ylab("Dispersal pressure (\u039b)")+
+    theme_light() +
+  theme(legend.position = "bottom",
+        text = element_text(face = "bold"),
+        strip.placement = "outside",
+        strip.background = element_blank(),
+        strip.text = element_text(colour = "black", vjust = 3))
+
+ggsave("figures/disp_kernel.png", width = 9, height = 9, units = "cm")
+
+```
+
+```{r ksi}
+
+rj <- map(pars, ~.x[, grepl("rj\\[", colnames(.x))]) %>%
+  map2(names(X), ~ mutate(data.frame(.x), species = .y))
+
+if("wolf" %in% species_to_plot) colnames(rj$wolf)[1:(length(colonization_covs$wolf))] <- colonization_covs$wolf
+if("otter" %in% species_to_plot)colnames(rj$otter)[1:(length(colonization_covs$otter))] <- colonization_covs$otter
+
+p_accept <- map2(rj, colonization_covs, pivot_longer, names_to = "cov", values_to = "isIn") %>%
+  map(group_by, species, cov) %>%
+  map(summarize, p_accept = mean(isIn)) %>%
+  reduce(rbind)
+
+ggplot(p_accept) + 
+  geom_col(aes(x = cov, y = p_accept, fill = species)) +
+    scale_fill_manual(values = c("#A37903FF", "#527E87FF")) +
+  theme_bw() + 
+  xlab("") + ylab("") +
+  facet_grid(. ~ factor(species, levels = c("wolf", "otter")), scale = "free_x", space = "free") +
+    theme(text = element_text(face = "bold"),
+          axis.text.x = element_text(angle = -25, hjust = 0),
+          strip.text = element_blank())
+
+ggsave("figures/supplementary/rjmcmcm.png", width = 21, height = 10.5, units = "cm")
+```
+
+
+```{r colonization}
+isIn <- map(pars, ~.x[, grepl("isIn\\[", colnames(.x))])
+
+alpha_ksi <- map(pars, ~ .x[, "alpha_ksi"])
+
+beta_ksi <- map(pars, ~ .x[, grepl("beta_ksi\\[", colnames(.x))])
+  
+colonization_summary <- map(names(X),
+                            ~ predict_over_all(X[[.x]], alpha_ksi[[.x]],
+                                               beta_ksi[[.x]], colonization_covs[[.x]])) %>%
+  map2(names(X), ~ mutate(.x, species = .y)) %>%
+  reduce(rbind)
+
+true_vals <- map2(X, colonization_covs,
+                  ~ pivot_longer(data.frame(.x[, .y]), cols = all_of(.y),
+                                 names_to = "cov", values_to = "x")) %>%
+  reduce(rbind)
+  
+vals_toplot <- p_accept %>% 
+  filter(p_accept > 0.75) %>%
+  .$cov
+
+ggplot(colonization_summary %>% filter(cov %in% vals_toplot)) + 
+  geom_line(aes(x = x, y = med, col = species), linewidth = .75) + 
+  geom_ribbon(aes(x = x, ymin = inf, ymax = sup, fill = species), alpha = 0.5) + 
+  geom_segment(data = true_vals %>% filter(cov %in% vals_toplot),
+                                           aes(x = x, xend = x, y = 0, yend = -Inf)) +
+  facet_wrap(~ factor(cov, levels = reduce(colonization_covs, c)),
+             scales = "free_x", nrow = 2, strip.position = "bottom") + 
+  xlab("") + ylab("Installation probability (\u03be)")+
+  scale_fill_manual(values = c("#A37903FF", "#527E87FF")) +
+  scale_color_manual(values = c("#A37903FF", "#527E87FF")) +
+  theme_light() +
+  theme(legend.position = "bottom",
+        text = element_text(face = "bold"),
+        strip.placement = "outside",
+        strip.background = element_blank(),
+        strip.text = element_text(colour = "black", vjust = 3))+
+  guides(fill = guide_legend(title.position="top", title.hjust = 0.5))
+
+ggsave("figures/probs2.png", width = 21, height = 14.8, units = "cm")
+
+```
+
+```{r detection}
+alpha_rho <- list()
+if("wolf" %in% species_to_plot) alpha_rho <- append(alpha_rho, list(wolf = pars$wolf[, "alpha_rho"]))
+if("otter" %in% species_to_plot) alpha_rho <- append(alpha_rho,
+                                                     list(otter.opport = pars$otter[, "alpha_rho[1]"],
+                                                          otter.stdzed = pars$otter[, "alpha_rho[2]"]))
+
+beta_rho <- list()
+if("wolf" %in% species_to_plot) beta_rho <- append(beta_rho,
+                                                   list(wolf = pars$wolf[, grepl("beta_rho\\[", colnames(pars$wolf))]))
+if("otter" %in% species_to_plot) beta_rho <- append(beta_rho,
+                                                     list(otter.opport = pars$otter[, c("beta_rho_t[1]")],
+                                                          otter.stdzed = pars$otter[, c("beta_rho_t[2]")]))
+detection_summary <- map(names(X_det),
+                            ~ predict_over_all(X_det[[.x]], alpha_rho[[.x]],
+                                               beta_rho[[.x]], detection_covs[[.x]])) %>%
+  map2(names(X_det), ~ mutate(.x, species = .y)) %>%
+  reduce(rbind)
+
+true_vals <- rbind(data.frame(cov = "effort", x = c(effort)),
+                   data.frame(cov = "p_road", x = X$wolf[, "p_road"]),
+                   data.frame(cov = "year", x = -11:12))
+
+ggplot(detection_summary) + 
+  geom_line(aes(x = x, y = med, col = species), linewidth = .5) + 
+  geom_ribbon(aes(x = x, ymin = inf, ymax = sup, fill = species), alpha = 0.5) + 
+  geom_segment(data = true_vals, aes(x = x, xend = x, y = 0, yend = -Inf)) +
+    scale_fill_manual(values = c("#B8B69EFF", "#A37903FF", "#527E87FF")) +
+  scale_color_manual(values = c("#B8B69EFF", "#A37903FF", "#527E87FF")) +
+  facet_wrap(~ cov,
+             scales = "free_x", strip.position = "bottom") + 
+  xlab("") + ylab("Detection probability (\u03c1)")+
+  theme_light() +
+  theme(legend.position = "bottom",
+        text = element_text(face = "bold"),
+        strip.placement = "outside",
+        strip.background = element_blank(),
+        strip.text = element_text(colour = "black"))+
+  guides(fill = guide_legend(title.position="top", title.hjust = 0.5))
+
+ggsave("figures/supplementary/detection.png", width = 21, height = 10.5, units = "cm")
+
+```
+
+```{r occu maps}
+
+zm.df <- cbind(xy, t(zm$wolf))
+colnames(zm.df) <- c("X", "Y", paste0("t", 1:23))
+zm.df <- pivot_longer(zm.df, cols = all_of(paste0("t", 1:23)),
+                      names_to = "t", values_to = "psi") %>%
+  mutate(t = as.numeric(gsub("t", "", t)))
+
+plot_t <- c(1, 5, 10, 15, 19, 23)
+dist.wolf <- ggplot(zm.df %>% filter(t %in% plot_t)) + 
+  geom_tile(aes(x = X, y = Y, fill = psi)) + 
+  geom_sf(data = st_union(bg), fill = NA) +
+  scale_fill_gradient(low = "white", high = "#527E87FF", name = "occupancy \n probability") +
+  facet_wrap(~ (t + 1995), nrow = 2) +
+  xlab("") + ylab("") +
+  theme_minimal() +
+  theme(text = element_text(face = "bold"),
+        axis.text = element_blank(),
+        strip.text = element_text(face = "bold"))
+
+zm.df <- cbind(select(bg), t(zm$otter))
+colnames(zm.df)[1:6] <- paste0("t", 1:6)
+
+zm.df <- pivot_longer(zm.df, cols = all_of(paste0("t", 1:6)),
+                      names_to = "t", values_to = "psi") %>%
+  mutate(t = as.numeric(gsub("t", "", t)))
+
+dist.otter <- ggplot(zm.df) + 
+  geom_sf(aes(fill = psi), col = NA) + 
+  geom_sf(data = st_union(zm.df), fill = NA) + 
+  scale_fill_gradient(low = "white", high = "#A37903FF", name = "occupancy \n probability") +
+  facet_wrap(~ sapply(t, function(x){
+    paste((x - 1) * 4 + c(2000, 2003), collapse = " - ")}),
+    nrow = 2) +
+  xlab("") + ylab("") +
+  theme_minimal() +
+  theme(text = element_text(face = "bold"),
+        axis.text = element_blank(),
+        strip.text = element_text(face = "bold"))
+
+ggpubr::ggarrange(dist.wolf, dist.otter, nrow = 2)
+
+ggsave("figures/disp_maps.png", width = 21, height = 29.7, units = "cm")
+
+```
+
+```{r col_map otter}
+
+ksi <- map(species_to_plot, 
+             ~ c(t(apply(invlogit(cbind(alpha_ksi[[.x]], beta_ksi[[.x]]) %*% t(cbind(1, X[[.x]][, colonization_covs[[.x]]]))), 2, mean))))
+
+xy$ksi <- ksi[[1]]
+bg$ksi <- ksi[[2]]
+
+st_ksi <- rbind(
+    select(xy, X, Y, ksi) %>%
+    st_drop_geometry() %>%
+    mutate(species = "wolf"),
+  cbind(st_coordinates(st_centroid(bg)), select(bg, ksi)) %>%
+    st_drop_geometry() %>%
+    mutate(species = "otter"))
+
+ggplot(st_ksi) + 
+  geom_sf(data = france) +
+  geom_tile(aes(x = X, y = Y, fill = ksi), col = NA, width = 10000, height = 10000) + 
+  facet_wrap(~ factor(species, levels = c("wolf", "otter"))) +
+  paletteer::scale_fill_paletteer_c("grDevices::RdYlGn", name = "Installation probability (\u03be)")+
+  xlab("") + ylab("") +
+  theme_minimal() +
+  theme(legend.position = "bottom",
+        axis.text = element_blank(),
+        text = element_text(face = "bold"),
+        strip.text = element_blank())+
+  guides(fill = guide_colourbar(title.position="top"))
+
+ggsave("figures/ksi_maps.png", width = 21, height = 14.5, units = "cm")
+```
+

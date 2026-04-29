@@ -49,6 +49,7 @@ po/*~
 rsconnect/
 
 # out files
+figures/*
 
 simulation_study/out/*
 !simulation_study/out/sim_4613427

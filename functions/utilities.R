@@ -1,6 +1,6 @@
 logit <- function(p) log(p/(1-p))
 invlogit <- function(x) 1/(1 + exp(-x))
-delta <- function(x, alpha, sigma){return(alpha * 100 / (2*pi*sigma**2) * exp(-x**2/(2*sigma**2)))}
+delta <- function(x, lambda, sigma){return(lambda * 100 / (2*pi*sigma**2) * exp(-x**2/(2*sigma**2)))}
 
 getSparse <- function(x, thr){
   # NB: I can replace 0 in the following lines by Inf and (> by !=). It should not change anything with the 

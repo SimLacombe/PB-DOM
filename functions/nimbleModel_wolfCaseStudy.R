@@ -5,18 +5,18 @@ myModel <- nimbleCode({
   ### PRIORS ###
   
   alpha_psi  ~ dnorm(0, 1/2.5^2)   # initial occupancy intercept
-  alpha_gam  ~ dnorm(0, 1/2.5^2)   # colonization intercept
-  alpha_omega~ dnorm(0, 1/2.5^2)   # extinction intercept
+  alpha_ksi  ~ dnorm(0, 1/2.5^2)   # colonization intercept
+  alpha_omega ~ dnorm(0, 1/2.5^2)   # extinction intercept
   alpha_rho  ~ dnorm(0, 1/2.5^2)   # detection intercept
-  alpha_ginf ~ dnorm(logit(0.05), 1) # long distance colonization probability
+  alpha_lam_min ~ dnorm(logit(0.05), 1) # long distance colonization probability
   
   # Slopes 
-  p_ksi ~ dbeta(1, 1)
+  p_accept ~ dbeta(1, 1)
   for(c in 1:ncovs_col){
-    beta_gam[c] ~ dnorm(0, 1/2.5^2)
-    if(RJMCMC) ksi[c] ~ dbern(p_ksi)
-    if(!RJMCMC) ksi[c] <- 1
-    betaksi[c] <- beta_gam[c] * ksi[c] 
+    beta_ksi[c] ~ dnorm(0, 1/2.5^2)
+    if(RJMCMC) rj[c] ~ dbern(p_accept)
+    if(!RJMCMC) rj[c] <- 1
+    beta_ksi_eff[c] <- beta_ksi[c] * rj[c] 
   }
   
   for (c in 1:ncovs_det){
@@ -25,7 +25,7 @@ myModel <- nimbleCode({
   
   # Scale and intensity parameters of the colonisation kernel 
   sigma ~ dlnorm(log(30), 1)       
-  alpha ~ dlnorm(log(0.5), 1)
+  lambda ~ dlnorm(log(0.5), 1)
   
   ### ECOLOGICAL MODEL ###
   
@@ -37,14 +37,12 @@ myModel <- nimbleCode({
     
     # following years
     for (t in 2:nSeasons) {
-        # loop over the neighbors of i
-        for (j in (dmatP[i] + 1):dmatP[i + 1]) {
-          kappa[t - 1, j] <- A * alpha / (2 * pi * sigma **2) * exp(-d2[j] / (2 * sigma ** 2)) * z[t - 1, dmatI[j]]
-        }
-      gamma[t - 1, i] <- gamma0[i] * (1 - exp(- (sum(kappa[t - 1, (dmatP[i] + 1):dmatP[i + 1]]) + gam_inf)))
-      
-      z[t, i] ~ dbern(z[t - 1, i] * (1 - omega) +
-                        (1 - z[t - 1, i]) * gamma[t - 1, i])
+      # loop over the neighbors of i
+      for (j in (dmatP[i] + 1):dmatP[i + 1]) {
+        delta[t - 1, j] <- exp(-d2[j] / (2 * sigma ** 2)) * z[t - 1, dmatI[j]]
+      }
+      gamma[t - 1, i] <- ksi[i] * (1 - exp(- (lam_min + 100 * lambda/ (2 * pi * sigma ** 2) * sum(delta[t - 1, (dmatP[i] + 1):dmatP[i + 1]]))))
+      z[t, i] ~ dbern(z[t - 1, i] * (1 - omega) + (1 - z[t - 1, i]) * gamma[t - 1, i])
     }
   }
   
@@ -61,10 +59,10 @@ myModel <- nimbleCode({
   
   omega <- ilogit(alpha_omega)
   psi <- ilogit(alpha_psi)
-  gam_inf <- ilogit(alpha_ginf)
+  lam_min <- ilogit(alpha_lam_min)
   
   for(i in 1:nSites){
-    gamma0[i] <- ilogit(alpha_gam + inprod(betaksi[1:ncovs_col], X_col[i, 1:ncovs_col]))
+    ksi[i] <- ilogit(alpha_ksi + inprod(beta_ksi_eff[1:ncovs_col], X_col[i, 1:ncovs_col]))
     for(t in 1:nSeasons){
       rho[t, i] <- ilogit(alpha_rho + inprod(beta_rho[1:ncovs_det], X_det[t, i, 1:ncovs_det]))
     }
@@ -77,12 +75,15 @@ initial.values <- function(zst, ncovs_col, ncovs_det) {
   list(
     z = zst,
     alpha_psi = rnorm(1, 0, 1/2.5**2),
-    alpha_gam = rnorm(1, 0, 1/2.5**2),
+    alpha_ksi = rnorm(1, 0, 1/2.5**2),
     alpha_omega = rnorm(1, 0, 1/2.5**2),
     alpha_rho = rnorm(1, 0, 1/2.5**2),
-    beta_gam = rnorm(ncovs_col, 0, 1/2.5**2),
+    beta_ksi = rnorm(ncovs_col, 0, 1/2.5**2),
     beta_rho = rnorm(ncovs_det, 0, 1/2.5**2),
-    alpha_ginf = rnorm(1, logit(0.05), 1), 
-    sigma = rlnorm(1, log(30), 1)
+    alpha_lam_min = rnorm(1, logit(0.05), 1), 
+    sigma = rlnorm(1, log(30), 1),
+    lambda = rlnorm(1, log(0.2), 1),
+    rj = rep(1, ncovs_col),
+    p_accept = 1
   )
 }
