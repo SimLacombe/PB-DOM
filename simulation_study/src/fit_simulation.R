@@ -9,9 +9,9 @@ id_scenar <-as.integer(args[2])
 
 source("functions/utilities.R")
 source("functions/nimbleModel_simulations.R")
-load("simulation_study/data/distanceMatrix.Rdata")
 
 dat <- readRDS(paste0("simulation_study/out/sim_",id_simul, "/Scenario", id_scenar, "/data.rds"))
+d <- dat$d
 
 for(t in 2:4){
   cat("\n", "RUNNING simulation ", id_simul, " - Scenario ", id_scenar, " - thr ", t, " sigma", "\n")
@@ -42,8 +42,8 @@ for(t in 2:4){
   
   mod.out <- runMCMC(
     mcmc = Cmod.MCMC,
-    niter = 7500,
-    nburnin = 5000,
+    niter = 5000,
+    nburnin = 2500,
     nchains = 2
   )
   

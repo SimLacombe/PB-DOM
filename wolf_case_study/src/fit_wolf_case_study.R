@@ -12,15 +12,24 @@ source("functions/nimbleModel_wolfCaseStudy.R")
 filenames <- list(y = "wolf_case_study/data/wolf_louvrier.rds", 
                   effort = "wolf_case_study/data/effort_louvrier.rds",
                   envCovs = "wolf_case_study/data/envcov_louvrier.rds",
-                  coords = "wolf_case_study/data/coordcells_wolf.rds")
+                  coords = "wolf_case_study/data/coordcells_wolf.rds",
+                  france = "wolf_case_study/data/countries_shp/")
 
 RJMCMC <- TRUE
 
-col_covs <- c("p_forest", "p_agri", "p_alti", "p_halt", "p_dbarr", "p_rock")
+col_covs <- c("p_forest", "p_agri", "p_alti", "p_dbarr", "p_halt")
   
 ### 1. Get data and covariates -------------------------------------------------
 
-dat <- readRDS(filenames$y)
+coords <- readRDS(filenames$coords) %>% 
+  st_as_sf(coords = c('X','Y'), crs = 2154) %>%
+  select()
+
+sites_kept <- !sapply(st_intersects(coords, filter(read_sf(filenames$france), NAME == "France")),
+                      is_empty)
+
+coords <- coords [sites_kept,]
+dat <- readRDS(filenames$y)[sites_kept,]
 
 Nsites <- nrow(dat)
 Nyears <- 23
@@ -32,19 +41,15 @@ dat <- map(1:Nsites, function(i){matrix(dat[i,], nrow = Nseasons, ncol = Nyears)
 
 y <- apply(dat, c(1,2), function(x){sum(sign(x), na.rm = T)})
 
-effort <- readRDS(filenames$effort)
+effort <- readRDS(filenames$effort)[sites_kept,]
 
-envCovs <- readRDS(filenames$envCovs)
+envCovs <- readRDS(filenames$envCovs)[sites_kept,]
 
 X_det  <- list(t(effort),
-               matrix(envCovs[, "p_road"], 23, 3450, byrow = TRUE)) %>%
+               matrix(envCovs[, "p_road"], 23, Nsites, byrow = TRUE)) %>%
   simplify2array()
   
 ### 2. Get distance matrix -----------------------------------------------------
-
-coords <- readRDS(filenames$coords) %>% 
-  st_as_sf(coords = c('X','Y'), crs = st_crs(grid)) %>%
-  select()
 
 dmat <- st_distance(coords)
 dmat <- matrix(as.numeric(dmat)/ 1000, Nsites, Nsites)
@@ -81,11 +86,11 @@ mod.Conf <- configureMCMC(mod, enableWAIC = FALSE)
 mod.Conf$addMonitors("z")
 
 if(RJMCMC){
-  mod.Conf$addMonitors("ksi")
+  mod.Conf$addMonitors("rj")
   
   configureRJ(conf = mod.Conf,
-              targetNodes = "beta_gam",
-              indicatorNodes = "ksi",
+              targetNodes = "beta_ksi",
+              indicatorNodes = "rj",
               control = list(mean = 0, scale = 2))
 }
 
@@ -98,11 +103,11 @@ chain <- floor(runif(1, 100000, 999999)) #get Unique identifier for the MCMC cha
 cat(chain, "\n")
 dir.create(paste0("wolf_case_study/out/CHAIN_", chain))
 
-Cmod.MCMC$run(niter = 5000, nburnin = 5000, reset = TRUE)
+Cmod.MCMC$run(niter = 10000, nburnin = 10000, reset = TRUE)
 
 ### Sample ---------------------------------------------------------------------
 
-nChunks <- 5
+nChunks <- 10
 nIter <- 500
 
 for(c in 1:nChunks){
