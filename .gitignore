@@ -63,10 +63,6 @@ otter_case_study/out/*
 !otter_case_study/out/CHAIN_135943
 otter_case_study/out/CHAIN_135943/*
 !otter_case_study/out/CHAIN_135943/MCMC_samples_otter_model_chunk1.rds
-# data files
-
-wolf_case_study/data/*
-otter_case_study/data/*
 
 # sbatch files
 
