@@ -67,3 +67,9 @@ otter_case_study/out/CHAIN_135943/*
 # sbatch files
 
 *.sh
+
+# Unnecessary scripts
+otter_case_study/src/maps_pbdom_vs_isdm.R
+otter_case_study/src/predict.R
+wolf_case_study/src/predict.R
+otter_case_study/src/psi_raw_versus_posterior.R
